@@ -326,7 +326,7 @@ public class Config {
              * This config item controls that whether the SpringMVC plugin should collect the parameters of the
              * request.
              */
-            public static boolean COLLECT_HTTP_PARAMS = false;
+            public static boolean COLLECT_HTTP_PARAMS = true;
         }
 
         public static class Toolkit {

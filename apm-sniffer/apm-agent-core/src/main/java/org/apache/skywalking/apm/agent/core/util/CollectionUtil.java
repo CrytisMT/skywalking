@@ -31,8 +31,15 @@ import java.util.stream.Collectors;
 public final class CollectionUtil {
     public static String toString(final Map<String, String[]> map) {
         return map.entrySet()
-                  .stream()
-                  .map(entry -> entry.getKey() + "=" + Arrays.toString(entry.getValue()))
-                  .collect(Collectors.joining("\n"));
+                .stream()
+                .map(entry -> entry.getKey() + "=" + Arrays.toString(entry.getValue()))
+                .collect(Collectors.joining("\n"));
+    }
+
+    public static String mapToString(final Map<String, String> map) {
+        return map.entrySet()
+                .stream()
+                .map(entry -> entry.getKey() + "=" + entry.getValue())
+                .collect(Collectors.joining("\n"));
     }
 }

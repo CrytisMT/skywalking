@@ -18,10 +18,15 @@
 
 package org.apache.skywalking.apm.plugin.spring.mvc.commons.interceptor;
 
+import java.io.IOException;
 import java.lang.reflect.Method;
+import java.util.Enumeration;
+import java.util.HashMap;
 import java.util.Map;
+import java.util.stream.Collectors;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
+
 import org.apache.skywalking.apm.agent.core.conf.Config;
 import org.apache.skywalking.apm.agent.core.context.CarrierItem;
 import org.apache.skywalking.apm.agent.core.context.ContextCarrier;
@@ -64,7 +69,7 @@ public abstract class AbstractMethodInterceptor implements InstanceMethodsAround
 
     @Override
     public void beforeMethod(EnhancedInstance objInst, Method method, Object[] allArguments, Class<?>[] argumentsTypes,
-        MethodInterceptResult result) throws Throwable {
+                             MethodInterceptResult result) throws Throwable {
 
         Boolean forwardRequestFlag = (Boolean) ContextManager.getRuntimeContext().get(FORWARD_REQUEST_FLAG);
         /**
@@ -90,7 +95,7 @@ public abstract class AbstractMethodInterceptor implements InstanceMethodsAround
         }
 
         HttpServletRequest request = (HttpServletRequest) ContextManager.getRuntimeContext()
-                                                                        .get(REQUEST_KEY_IN_RUNTIME_CONTEXT);
+                .get(REQUEST_KEY_IN_RUNTIME_CONTEXT);
         if (request != null) {
             StackDepth stackDepth = (StackDepth) ContextManager.getRuntimeContext().get(CONTROLLER_METHOD_STACK_DEPTH);
 
@@ -125,8 +130,8 @@ public abstract class AbstractMethodInterceptor implements InstanceMethodsAround
 
     private String buildOperationName(Object invoker, Method method) {
         StringBuilder operationName = new StringBuilder(invoker.getClass().getName()).append(".")
-                                                                                     .append(method.getName())
-                                                                                     .append("(");
+                .append(method.getName())
+                .append("(");
         for (Class<?> type : method.getParameterTypes()) {
             operationName.append(type.getName()).append(",");
         }
@@ -140,7 +145,7 @@ public abstract class AbstractMethodInterceptor implements InstanceMethodsAround
 
     @Override
     public Object afterMethod(EnhancedInstance objInst, Method method, Object[] allArguments, Class<?>[] argumentsTypes,
-        Object ret) throws Throwable {
+                              Object ret) throws Throwable {
         Boolean forwardRequestFlag = (Boolean) ContextManager.getRuntimeContext().get(FORWARD_REQUEST_FLAG);
         /**
          * Spring MVC plugin do nothing if current request is forward request.
@@ -151,7 +156,7 @@ public abstract class AbstractMethodInterceptor implements InstanceMethodsAround
         }
 
         HttpServletRequest request = (HttpServletRequest) ContextManager.getRuntimeContext()
-                                                                        .get(REQUEST_KEY_IN_RUNTIME_CONTEXT);
+                .get(REQUEST_KEY_IN_RUNTIME_CONTEXT);
 
         if (request != null) {
             StackDepth stackDepth = (StackDepth) ContextManager.getRuntimeContext().get(CONTROLLER_METHOD_STACK_DEPTH);
@@ -165,10 +170,11 @@ public abstract class AbstractMethodInterceptor implements InstanceMethodsAround
 
             if (stackDepth.depth() == 0) {
                 HttpServletResponse response = (HttpServletResponse) ContextManager.getRuntimeContext()
-                                                                                   .get(RESPONSE_KEY_IN_RUNTIME_CONTEXT);
+                        .get(RESPONSE_KEY_IN_RUNTIME_CONTEXT);
                 if (response == null) {
                     throw new ServletResponseNotFoundException();
                 }
+                addTraceId(response);
 
                 if (IS_SERVLET_GET_STATUS_METHOD_EXIST && response.getStatus() >= 400) {
                     span.errorOccurred();
@@ -193,7 +199,7 @@ public abstract class AbstractMethodInterceptor implements InstanceMethodsAround
 
     @Override
     public void handleMethodException(EnhancedInstance objInst, Method method, Object[] allArguments,
-        Class<?>[] argumentsTypes, Throwable t) {
+                                      Class<?>[] argumentsTypes, Throwable t) {
         ContextManager.activeSpan().errorOccurred().log(t);
     }
 
@@ -204,5 +210,32 @@ public abstract class AbstractMethodInterceptor implements InstanceMethodsAround
             tagValue = Config.Plugin.Http.HTTP_PARAMS_LENGTH_THRESHOLD > 0 ? StringUtil.cut(tagValue, Config.Plugin.Http.HTTP_PARAMS_LENGTH_THRESHOLD) : tagValue;
             Tags.HTTP.PARAMS.set(span, tagValue);
         }
+
+        //collect request headers
+        Enumeration<String> headerNames = request.getHeaderNames();
+        final Map<String, String> headerMap = new HashMap<>();
+        while (headerNames.hasMoreElements()) {
+            String header = headerNames.nextElement();
+            String headerVal = request.getHeader(header);
+            headerMap.put(header, headerVal);
+        }
+        Tags.HTTP.HEADERS.set(span,CollectionUtil.mapToString(headerMap));
+
+        //collect request body
+        try {
+            if ("POST".equalsIgnoreCase(request.getMethod())) {
+                String body = request.getReader().lines()
+                        .collect(Collectors.joining("\n"));
+                Tags.HTTP.BODY.set(span, body);
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+
+    }
+
+    private void addTraceId(HttpServletResponse response) {
+        String traceId = ContextManager.getGlobalTraceId();
+        response.addHeader("X-TraceId", traceId);
     }
 }
