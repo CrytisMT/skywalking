@@ -18,16 +18,6 @@
 
 package org.apache.skywalking.apm.plugin.spring.mvc.commons.interceptor;
 
-import java.io.IOException;
-import java.lang.reflect.Method;
-import java.util.Enumeration;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.stream.Collectors;
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
-
-import org.apache.skywalking.apm.agent.core.conf.Config;
 import org.apache.skywalking.apm.agent.core.context.CarrierItem;
 import org.apache.skywalking.apm.agent.core.context.ContextCarrier;
 import org.apache.skywalking.apm.agent.core.context.ContextManager;
@@ -41,14 +31,17 @@ import org.apache.skywalking.apm.agent.core.util.CollectionUtil;
 import org.apache.skywalking.apm.agent.core.util.MethodUtil;
 import org.apache.skywalking.apm.network.trace.component.ComponentsDefine;
 import org.apache.skywalking.apm.plugin.spring.mvc.commons.EnhanceRequireObjectCache;
+import org.apache.skywalking.apm.plugin.spring.mvc.commons.SpringMVCPluginConfig;
 import org.apache.skywalking.apm.plugin.spring.mvc.commons.exception.IllegalMethodStackDepthException;
 import org.apache.skywalking.apm.plugin.spring.mvc.commons.exception.ServletResponseNotFoundException;
 import org.apache.skywalking.apm.util.StringUtil;
 
-import static org.apache.skywalking.apm.plugin.spring.mvc.commons.Constants.CONTROLLER_METHOD_STACK_DEPTH;
-import static org.apache.skywalking.apm.plugin.spring.mvc.commons.Constants.FORWARD_REQUEST_FLAG;
-import static org.apache.skywalking.apm.plugin.spring.mvc.commons.Constants.REQUEST_KEY_IN_RUNTIME_CONTEXT;
-import static org.apache.skywalking.apm.plugin.spring.mvc.commons.Constants.RESPONSE_KEY_IN_RUNTIME_CONTEXT;
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
+import java.lang.reflect.Method;
+import java.util.Map;
+
+import static org.apache.skywalking.apm.plugin.spring.mvc.commons.Constants.*;
 
 /**
  * the abstract method interceptor
@@ -60,7 +53,8 @@ public abstract class AbstractMethodInterceptor implements InstanceMethodsAround
     private static final String GET_STATUS_METHOD = "getStatus";
 
     static {
-        IS_SERVLET_GET_STATUS_METHOD_EXIST = MethodUtil.isMethodExist(AbstractMethodInterceptor.class.getClassLoader(), SERVLET_RESPONSE_CLASS, GET_STATUS_METHOD);
+        IS_SERVLET_GET_STATUS_METHOD_EXIST = MethodUtil.isMethodExist(
+                AbstractMethodInterceptor.class.getClassLoader(), SERVLET_RESPONSE_CLASS, GET_STATUS_METHOD);
     }
 
     public abstract String getRequestURL(Method method);
@@ -81,7 +75,7 @@ public abstract class AbstractMethodInterceptor implements InstanceMethodsAround
         }
 
         String operationName;
-        if (Config.Plugin.SpringMVC.USE_QUALIFIED_NAME_AS_ENDPOINT_NAME) {
+        if (SpringMVCPluginConfig.Plugin.SpringMVC.USE_QUALIFIED_NAME_AS_ENDPOINT_NAME) {
             operationName = MethodUtil.generateOperationName(method);
         } else {
             EnhanceRequireObjectCache pathMappingCache = (EnhanceRequireObjectCache) objInst.getSkyWalkingDynamicField();
@@ -89,9 +83,9 @@ public abstract class AbstractMethodInterceptor implements InstanceMethodsAround
             if (requestURL == null) {
                 requestURL = getRequestURL(method);
                 pathMappingCache.addPathMapping(method, requestURL);
-                requestURL = getAcceptedMethodTypes(method) + pathMappingCache.findPathMapping(method);
+                requestURL = pathMappingCache.findPathMapping(method);
             }
-            operationName = requestURL;
+            operationName = getAcceptedMethodTypes(method) + requestURL;
         }
 
         HttpServletRequest request = (HttpServletRequest) ContextManager.getRuntimeContext()
@@ -113,8 +107,12 @@ public abstract class AbstractMethodInterceptor implements InstanceMethodsAround
                 span.setComponent(ComponentsDefine.SPRING_MVC_ANNOTATION);
                 SpanLayer.asHttp(span);
 
-                if (Config.Plugin.SpringMVC.COLLECT_HTTP_PARAMS) {
+                if (SpringMVCPluginConfig.Plugin.SpringMVC.COLLECT_HTTP_PARAMS) {
                     collectHttpParam(request, span);
+                }
+
+                if (!CollectionUtil.isEmpty(SpringMVCPluginConfig.Plugin.Http.INCLUDE_HTTP_HEADERS)) {
+                    collectHttpHeaders(request, span);
                 }
 
                 stackDepth = new StackDepth();
@@ -170,7 +168,8 @@ public abstract class AbstractMethodInterceptor implements InstanceMethodsAround
 
             if (stackDepth.depth() == 0) {
                 HttpServletResponse response = (HttpServletResponse) ContextManager.getRuntimeContext()
-                        .get(RESPONSE_KEY_IN_RUNTIME_CONTEXT);
+                        .get(
+                                RESPONSE_KEY_IN_RUNTIME_CONTEXT);
                 if (response == null) {
                     throw new ServletResponseNotFoundException();
                 }
@@ -187,7 +186,7 @@ public abstract class AbstractMethodInterceptor implements InstanceMethodsAround
             }
 
             // Active HTTP parameter collection automatically in the profiling context.
-            if (!Config.Plugin.SpringMVC.COLLECT_HTTP_PARAMS && span.isProfiling()) {
+            if (!SpringMVCPluginConfig.Plugin.SpringMVC.COLLECT_HTTP_PARAMS && span.isProfiling()) {
                 collectHttpParam(request, span);
             }
 
@@ -207,19 +206,11 @@ public abstract class AbstractMethodInterceptor implements InstanceMethodsAround
         final Map<String, String[]> parameterMap = request.getParameterMap();
         if (parameterMap != null && !parameterMap.isEmpty()) {
             String tagValue = CollectionUtil.toString(parameterMap);
-            tagValue = Config.Plugin.Http.HTTP_PARAMS_LENGTH_THRESHOLD > 0 ? StringUtil.cut(tagValue, Config.Plugin.Http.HTTP_PARAMS_LENGTH_THRESHOLD) : tagValue;
+            tagValue = SpringMVCPluginConfig.Plugin.Http.HTTP_PARAMS_LENGTH_THRESHOLD > 0 ?
+                    StringUtil.cut(tagValue, SpringMVCPluginConfig.Plugin.Http.HTTP_PARAMS_LENGTH_THRESHOLD) : tagValue;
             Tags.HTTP.PARAMS.set(span, tagValue);
         }
 
-        //collect request headers
-        Enumeration<String> headerNames = request.getHeaderNames();
-        final Map<String, String> headerMap = new HashMap<>();
-        while (headerNames.hasMoreElements()) {
-            String header = headerNames.nextElement();
-            String headerVal = request.getHeader(header);
-            headerMap.put(header, headerVal);
-        }
-        Tags.HTTP.HEADERS.set(span,CollectionUtil.mapToString(headerMap));
 
         //collect request body
         try {
@@ -237,5 +228,24 @@ public abstract class AbstractMethodInterceptor implements InstanceMethodsAround
     private void addTraceId(HttpServletResponse response) {
         String traceId = ContextManager.getGlobalTraceId();
         response.addHeader("X-TraceId", traceId);
+    }
+
+    private void collectHttpHeaders(HttpServletRequest request, AbstractSpan span) {
+        final List<String> headersList = new LinkedList<>();
+        SpringMVCPluginConfig.Plugin.Http.INCLUDE_HTTP_HEADERS.stream().filter(headerName -> request.getHeaders(headerName) != null).forEach(headerName -> {
+            Enumeration<String> headerValues = request.getHeaders(headerName);
+            List<String> valueList = Collections.list(headerValues);
+            if (!CollectionUtil.isEmpty(valueList)) {
+                String headerValue = valueList.toString();
+                headersList.add(headerName + "=" + headerValue);
+            }
+        });
+
+        if (!headersList.isEmpty()) {
+            String tagValue = headersList.stream().collect(Collectors.joining("\n"));
+            tagValue = SpringMVCPluginConfig.Plugin.Http.HTTP_HEADERS_LENGTH_THRESHOLD > 0 ?
+                    StringUtil.cut(tagValue, SpringMVCPluginConfig.Plugin.Http.HTTP_HEADERS_LENGTH_THRESHOLD) : tagValue;
+            Tags.HTTP.HEADERS.set(span, tagValue);
+        }
     }
 }
