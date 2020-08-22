@@ -34,7 +34,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public class ZookeeperCoordinator implements ClusterRegister, ClusterNodesQuery {
-    private static final Logger logger = LoggerFactory.getLogger(ZookeeperCoordinator.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(ZookeeperCoordinator.class);
 
     private static final String REMOTE_NAME_PATH = "remote";
 
@@ -44,7 +44,7 @@ public class ZookeeperCoordinator implements ClusterRegister, ClusterNodesQuery 
     private volatile Address selfAddress;
 
     ZookeeperCoordinator(ClusterModuleZookeeperConfig config,
-        ServiceDiscovery<RemoteInstance> serviceDiscovery) throws Exception {
+                         ServiceDiscovery<RemoteInstance> serviceDiscovery) throws Exception {
         this.config = config;
         this.serviceDiscovery = serviceDiscovery;
         this.serviceCache = serviceDiscovery.serviceCacheBuilder().name(REMOTE_NAME_PATH).build();
@@ -62,11 +62,11 @@ public class ZookeeperCoordinator implements ClusterRegister, ClusterNodesQuery 
                                                                                                     .id(UUID.randomUUID()
                                                                                                             .toString())
                                                                                                     .address(remoteInstance
-                                                                                                        .getAddress()
-                                                                                                        .getHost())
+                                                                                                                 .getAddress()
+                                                                                                                 .getHost())
                                                                                                     .port(remoteInstance
-                                                                                                        .getAddress()
-                                                                                                        .getPort())
+                                                                                                              .getAddress()
+                                                                                                              .getPort())
                                                                                                     .payload(remoteInstance)
                                                                                                     .build();
 
