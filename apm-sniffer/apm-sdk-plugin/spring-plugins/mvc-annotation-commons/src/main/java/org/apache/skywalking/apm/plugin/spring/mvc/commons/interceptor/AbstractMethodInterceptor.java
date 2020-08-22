@@ -39,7 +39,8 @@ import org.apache.skywalking.apm.util.StringUtil;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.lang.reflect.Method;
-import java.util.Map;
+import java.util.*;
+import java.util.stream.Collectors;
 
 import static org.apache.skywalking.apm.plugin.spring.mvc.commons.Constants.*;
 
@@ -242,7 +243,7 @@ public abstract class AbstractMethodInterceptor implements InstanceMethodsAround
         });
 
         if (!headersList.isEmpty()) {
-            String tagValue = headersList.stream().collect(Collectors.joining("\n"));
+            String tagValue = String.join("\n", headersList);
             tagValue = SpringMVCPluginConfig.Plugin.Http.HTTP_HEADERS_LENGTH_THRESHOLD > 0 ?
                     StringUtil.cut(tagValue, SpringMVCPluginConfig.Plugin.Http.HTTP_HEADERS_LENGTH_THRESHOLD) : tagValue;
             Tags.HTTP.HEADERS.set(span, tagValue);
